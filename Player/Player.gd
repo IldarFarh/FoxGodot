@@ -1,8 +1,9 @@
 extends KinematicBody2D
 
-const ACCELERATION = 500
-const MAX_SPEED = 80
-const FRICTION = 500
+export var ACCELERATION = 500
+export var MAX_SPEED = 80
+export var ROLL_SPEED = 110
+export var FRICTION = 500
 
 enum {
 	MOVE,
@@ -12,19 +13,22 @@ enum {
 
 var state = MOVE
 var velocity = Vector2.ZERO
-#onready var animationPlayer = $AnimationPlayer
+var current_vector = Vector2.DOWN
+
 onready var animationTree = $AnimationTree
 onready var animationState = animationTree.get("parameters/playback")
+onready var hurtBox = $Hurtbox
 
 func _ready():
+	PlayerStats.connect("no_health", self, "queue_free")
 	animationTree.active = true
 
-func _process(delta):
+func _physics_process(delta):
 	match state:
 		MOVE:
 			move_state(delta)
 		ROLL:
-			pass
+			roll_state()
 		ATTACK:
 			attack_state()
 
@@ -35,9 +39,12 @@ func move_state(delta):
 	input_vector = input_vector.normalized()
 	
 	if input_vector != Vector2.ZERO:
+		current_vector = input_vector
+		$HitboxPivot/SwordHitbox.knockback_vector = current_vector
 		animationTree.set("parameters/Idle/blend_position", input_vector)
 		animationTree.set("parameters/Run/blend_position", input_vector)
 		animationTree.set("parameters/Attack/blend_position", input_vector)
+		animationTree.set("parameters/Roll/blend_position", input_vector)
 		animationState.travel("Run")
 		velocity = velocity.move_toward(input_vector * MAX_SPEED, ACCELERATION * delta)
 	else:
@@ -48,10 +55,23 @@ func move_state(delta):
 	
 	if Input.is_action_just_pressed("attack"):
 		state = ATTACK
+	elif Input.is_action_just_pressed("roll"):
+		state = ROLL
 
 func attack_state():
 	velocity = Vector2.ZERO
 	animationState.travel("Attack")
 
+func roll_state():
+	velocity = current_vector * ROLL_SPEED
+	animationState.travel("Roll")
+	velocity = move_and_slide(velocity)
+
 func attack_animation_finished():
+	velocity = velocity / 2
 	state = MOVE
+
+func _on_Hurtbox_area_entered(area):
+	PlayerStats.health -= area.damage
+	hurtBox.start_invincibility(0.5)
+	hurtBox.create_hit_effect()
